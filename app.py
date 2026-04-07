@@ -86,7 +86,7 @@ def solve_model(R_limit):
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
-        risk.tolist()  # Risk constraint
+        risk.tolist()
     ]
 
     b_ub = [
@@ -99,9 +99,7 @@ def solve_model(R_limit):
 
     bounds = [(0, None)] * 3
 
-    res = linprog(c=cost, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
-
-    return res
+    return linprog(c=cost, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
 
 # -----------------------------
 # CURRENT SOLUTION
@@ -117,34 +115,38 @@ else:
     st.stop()
 
 # -----------------------------
-# GENERATE TRADE-OFF DATA
+# GENERATE MANY SOLUTIONS
 # -----------------------------
 cost_list = []
 risk_list = []
 
-risk_levels = np.linspace(0.1, 0.8, 30)
+risk_levels = np.linspace(0.05, 1.0, 50)
 
 for r_lim in risk_levels:
     res_temp = solve_model(r_lim)
 
     if res_temp.success:
         x_temp = res_temp.x
-        cost_val = np.dot(cost, x_temp)
-        risk_val = np.dot(risk, x_temp) / D
+
+        cost_val = float(np.dot(cost, x_temp))
+        risk_val = float(np.dot(risk, x_temp) / D)
 
         cost_list.append(cost_val)
         risk_list.append(risk_val)
 
 # -----------------------------
-# CLEAN + PARETO FILTERING
+# PARETO FILTERING (ROBUST)
 # -----------------------------
-points = list(set(zip(cost_list, risk_list)))  # remove duplicates
-points = sorted(points)  # sort by cost
+points = list(set(zip(cost_list, risk_list)))
+points = sorted(points, key=lambda x: x[0])
 
 pareto = []
+min_risk = float('inf')
+
 for c, r in points:
-    if not pareto or r < pareto[-1][1]:
+    if r < min_risk:
         pareto.append((c, r))
+        min_risk = r
 
 if len(pareto) > 1:
     cost_p, risk_p = zip(*pareto)
@@ -158,14 +160,19 @@ st.header("Cost vs Risk Pareto Curve")
 
 fig, ax = plt.subplots()
 
+# All solutions
+ax.scatter(cost_list, risk_list, alpha=0.3, label="All Solutions")
+
 # Pareto curve
-ax.plot(cost_p, risk_p, marker='o', label="Pareto Curve")
+ax.plot(cost_p, risk_p, color='blue', marker='o', linewidth=2, label="Pareto Frontier")
 
 # Selected solution
 ax.scatter(C_star, R_star, color='red', s=120, label="Selected Solution")
 
 ax.set_xlabel("Cost")
 ax.set_ylabel("Risk")
+ax.set_title("Pareto Trade-off Curve")
+ax.grid(True)
 ax.legend()
 
 st.pyplot(fig)
@@ -194,4 +201,3 @@ st.subheader("Metrics")
 st.write(f"Total Cost: {C_star:.2f}")
 st.write(f"Average Risk: {R_star:.4f}")
 st.write(f"Risk Limit Used: {R_max}")
-
