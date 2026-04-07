@@ -6,18 +6,24 @@ import pandas as pd
 
 st.set_page_config(layout="wide")
 
-st.title("📊 Cost Optimization with Risk Control")
+st.title("📊 Cost Optimization with Risk Sensitivity")
 
 # -----------------------------
-# DEMAND
+# STEP 1: SUPPLIER SELECTION
 # -----------------------------
-st.header("Demand Input")
-D = st.number_input("Enter Total Demand", value=1000)
+st.header("Step 1: Select Suppliers")
+
+suppliers = ["A", "B", "C"]
+selected = []
+
+for s in suppliers:
+    val = st.checkbox(f"Use Supplier {s}", value=True)
+    selected.append(1 if val else 0)
 
 # -----------------------------
-# SUPPLIER INPUT
+# STEP 2: INPUT DATA
 # -----------------------------
-st.header("Supplier Details")
+st.header("Step 2: Supplier Inputs")
 
 col1, col2, col3 = st.columns(3)
 
@@ -43,47 +49,38 @@ cost = np.array([cost_A, cost_B, cost_C])
 risk = np.array([risk_A, risk_B, risk_C])
 capacity = np.array([cap_A, cap_B, cap_C])
 
-suppliers = ["A", "B", "C"]
+# -----------------------------
+# DEMAND
+# -----------------------------
+st.header("Demand")
+D = st.number_input("Total Demand", value=1000)
 
 # -----------------------------
-# SUPPLIER SELECTION
+# STEP 3: LAMBDA INPUT
 # -----------------------------
-st.header("Supplier Strategy")
-
-mode = st.radio("Select sourcing strategy",
-                ["Use All Suppliers", "Select Suppliers Manually"])
-
-selected = [1, 1, 1]
-
-if mode == "Select Suppliers Manually":
-    selected = []
-    for s in suppliers:
-        val = st.checkbox(f"Use Supplier {s}", value=True)
-        selected.append(1 if val else 0)
-
-# -----------------------------
-# LAMBDA (RISK CONTROL)
-# -----------------------------
-st.header("Risk Preference (λ)")
+st.header("Step 3: Risk Preference")
 
 lam = st.slider("Risk Tolerance (λ)", 0.0, 1.0, 0.5)
 
-# Map λ → Risk Limit
-R_max = 0.1 + 0.8 * lam
+# Convert λ → risk limit
+def lambda_to_risk(l):
+    return 0.1 + 0.8 * l
+
+R_max = lambda_to_risk(lam)
 
 st.write(f"Allowed Risk Level: {R_max:.2f}")
 
 # -----------------------------
-# SOLVER FUNCTION (COST MIN)
+# SOLVER FUNCTION
 # -----------------------------
 def solve_model(R_limit):
 
     A_ub = [
-        [-1, -1, -1],  # Demand
+        [-1, -1, -1],
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
-        risk.tolist()  # Risk constraint
+        risk.tolist()
     ]
 
     b_ub = [
@@ -99,7 +96,7 @@ def solve_model(R_limit):
     return linprog(c=cost, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
 
 # -----------------------------
-# CURRENT SOLUTION
+# MAIN SOLUTION
 # -----------------------------
 res = solve_model(R_max)
 
@@ -108,97 +105,57 @@ if res.success:
     C_star = np.dot(cost, x)
     R_star = np.dot(risk, x) / D
 else:
-    st.error("No feasible solution for this risk level")
+    st.error("No feasible solution")
     st.stop()
-
-# -----------------------------
-# GENERATE TRADE-OFF CURVE
-# -----------------------------
-cost_list = []
-risk_list = []
-
-risk_levels = np.linspace(0.05, 0.9, 60)
-
-for r_lim in risk_levels:
-    res_temp = solve_model(r_lim)
-
-    if res_temp.success:
-        x_temp = res_temp.x
-        cost_list.append(float(np.dot(cost, x_temp)))
-        risk_list.append(float(np.dot(risk, x_temp) / D))
-
-# -----------------------------
-# PARETO FILTER
-# -----------------------------
-points = list(set(zip(cost_list, risk_list)))
-points = sorted(points, key=lambda x: x[0])
-
-pareto = []
-min_risk = float('inf')
-
-for c, r in points:
-    if r < min_risk:
-        pareto.append((c, r))
-        min_risk = r
-
-cost_p, risk_p = zip(*pareto)
-
-# -----------------------------
-# GRAPH
-# -----------------------------
-st.header("Cost vs Risk Trade-off")
-
-fig, ax = plt.subplots()
-
-# All solutions
-ax.scatter(cost_list, risk_list, alpha=0.3, label="All Solutions")
-
-# Pareto curve
-ax.plot(cost_p, risk_p, color='blue', marker='o', linewidth=2, label="Pareto Frontier")
-
-# Current solution
-ax.scatter(C_star, R_star, color='red', s=120, label="Selected (λ-based)")
-
-ax.set_xlabel("Cost")
-ax.set_ylabel("Risk")
-ax.set_title("Cost vs Risk Trade-off")
-ax.grid(True)
-ax.legend()
-
-st.pyplot(fig)
-
-# -----------------------------
-# TABLE
-# -----------------------------
-df = pd.DataFrame({
-    "Cost": cost_p,
-    "Risk": risk_p
-})
-
-st.subheader("Pareto Data")
-st.dataframe(df)
 
 # -----------------------------
 # RESULTS
 # -----------------------------
-st.header("Results")
+st.header("Optimal Solution")
 
 st.subheader("Allocation")
 for i, s in enumerate(suppliers):
     st.write(f"Supplier {s}: {x[i]:.2f}")
 
 st.subheader("Metrics")
-st.write(f"Total Cost: {C_star:.2f}")
-st.write(f"Average Risk: {R_star:.4f}")
+st.write(f"Cost: {C_star:.2f}")
+st.write(f"Risk: {R_star:.4f}")
 
 # -----------------------------
-# INSIGHT PANEL
+# SENSITIVITY ANALYSIS
 # -----------------------------
-st.header("Insights")
+st.header("Sensitivity Analysis (λ ± 0.10)")
 
-if lam < 0.3:
-    st.success("Low risk preference → safer suppliers selected, higher cost")
-elif lam > 0.7:
-    st.success("High risk tolerance → cheaper suppliers selected")
-else:
-    st.success("Balanced approach between cost and risk")
+lambda_values = [
+    max(0, lam - 0.10),
+    lam,
+    min(1, lam + 0.10)
+]
+
+results = []
+
+for l in lambda_values:
+    R_test = lambda_to_risk(l)
+    res_temp = solve_model(R_test)
+
+    if res_temp.success:
+        x_temp = res_temp.x
+        cost_val = np.dot(cost, x_temp)
+        risk_val = np.dot(risk, x_temp) / D
+        status = "Feasible"
+    else:
+        cost_val = None
+        risk_val = None
+        status = "Infeasible"
+
+    results.append({
+        "Lambda": round(l, 2),
+        "Risk Limit": round(R_test, 2),
+        "Cost": cost_val,
+        "Risk": risk_val,
+        "Status": status
+    })
+
+df = pd.DataFrame(results)
+
+st.dataframe(df)
