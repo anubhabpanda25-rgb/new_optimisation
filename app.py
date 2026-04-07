@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,11 +12,10 @@ st.title("📊 Cost Minimization with Risk Constraint")
 # DEMAND
 # -----------------------------
 st.header("Demand Input")
-
 D = st.number_input("Enter Total Demand", value=1000)
 
 # -----------------------------
-# SUPPLIER INPUT (IN COLUMNS)
+# SUPPLIER INPUT (COLUMNS)
 # -----------------------------
 st.header("Supplier Details")
 
@@ -56,7 +53,7 @@ st.header("Supplier Strategy")
 mode = st.radio("Select sourcing strategy",
                 ["Use All Suppliers", "Select Suppliers Manually"])
 
-selected = [1,1,1]
+selected = [1, 1, 1]
 
 if mode == "Select Suppliers Manually":
     selected = []
@@ -85,22 +82,22 @@ else:
 def solve_model(R_limit):
 
     A_ub = [
-        [-1,-1,-1],
-        [1,0,0],
-        [0,1,0],
-        [0,0,1],
-        risk.tolist()
+        [-1, -1, -1],  # Demand
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        risk.tolist()  # Risk constraint
     ]
 
     b_ub = [
         -D,
-        capacity[0]*selected[0],
-        capacity[1]*selected[1],
-        capacity[2]*selected[2],
+        capacity[0] * selected[0],
+        capacity[1] * selected[1],
+        capacity[2] * selected[2],
         R_limit * D
     ]
 
-    bounds = [(0,None)]*3
+    bounds = [(0, None)] * 3
 
     res = linprog(c=cost, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
 
@@ -120,30 +117,52 @@ else:
     st.stop()
 
 # -----------------------------
-# TRADE-OFF CURVE
+# GENERATE TRADE-OFF DATA
 # -----------------------------
 cost_list = []
 risk_list = []
 
-risk_levels = np.linspace(0.1, 0.8, 20)
+risk_levels = np.linspace(0.1, 0.8, 30)
 
 for r_lim in risk_levels:
     res_temp = solve_model(r_lim)
 
     if res_temp.success:
         x_temp = res_temp.x
-        cost_list.append(np.dot(cost, x_temp))
-        risk_list.append(np.dot(risk, x_temp) / D)
+        cost_val = np.dot(cost, x_temp)
+        risk_val = np.dot(risk, x_temp) / D
+
+        cost_list.append(cost_val)
+        risk_list.append(risk_val)
+
+# -----------------------------
+# CLEAN + PARETO FILTERING
+# -----------------------------
+points = list(set(zip(cost_list, risk_list)))  # remove duplicates
+points = sorted(points)  # sort by cost
+
+pareto = []
+for c, r in points:
+    if not pareto or r < pareto[-1][1]:
+        pareto.append((c, r))
+
+if len(pareto) > 1:
+    cost_p, risk_p = zip(*pareto)
+else:
+    cost_p, risk_p = cost_list, risk_list
 
 # -----------------------------
 # GRAPH
 # -----------------------------
-st.header("Cost vs Risk Trade-off")
+st.header("Cost vs Risk Pareto Curve")
 
 fig, ax = plt.subplots()
 
-ax.plot(cost_list, risk_list, marker='o', label="Trade-off Curve")
-ax.scatter(C_star, R_star, color='red', s=100, label="Selected Solution")
+# Pareto curve
+ax.plot(cost_p, risk_p, marker='o', label="Pareto Curve")
+
+# Selected solution
+ax.scatter(C_star, R_star, color='red', s=120, label="Selected Solution")
 
 ax.set_xlabel("Cost")
 ax.set_ylabel("Risk")
@@ -155,11 +174,11 @@ st.pyplot(fig)
 # TABLE
 # -----------------------------
 df = pd.DataFrame({
-    "Cost": cost_list,
-    "Risk": risk_list
+    "Cost": cost_p,
+    "Risk": risk_p
 })
 
-st.subheader("Trade-off Data")
+st.subheader("Pareto Data")
 st.dataframe(df)
 
 # -----------------------------
@@ -175,3 +194,4 @@ st.subheader("Metrics")
 st.write(f"Total Cost: {C_star:.2f}")
 st.write(f"Average Risk: {R_star:.4f}")
 st.write(f"Risk Limit Used: {R_max}")
+
