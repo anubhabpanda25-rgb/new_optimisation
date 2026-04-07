@@ -74,11 +74,11 @@ st.write(f"Allowed Risk Level: {R_max:.2f}")
 def solve_model(R_limit):
 
     A_ub = [
-        [-1, -1, -1],     # demand
+        [-1, -1, -1],
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
-        risk.tolist()     # risk constraint
+        risk.tolist()
     ]
 
     b_ub = [
@@ -158,43 +158,11 @@ df = pd.DataFrame(results)
 st.dataframe(df)
 
 # -----------------------------
-# TRADE-OFF CURVE
-# -----------------------------
-st.header("Cost vs Risk Trade-off")
-
-cost_list = []
-risk_list = []
-
-risk_levels = np.linspace(0.05, 0.9, 50)
-
-for r_lim in risk_levels:
-    res_temp = solve_model(r_lim)
-
-    if res_temp.success:
-        x_temp = res_temp.x
-        cost_list.append(float(np.dot(cost, x_temp)))
-        risk_list.append(float(np.dot(risk, x_temp) / D))
-
-fig, ax = plt.subplots()
-
-ax.scatter(cost_list, risk_list, alpha=0.4, label="Solutions")
-ax.scatter(C_star, R_star, color='red', s=120, label="Selected")
-
-ax.set_xlabel("Cost")
-ax.set_ylabel("Risk")
-ax.set_title("Trade-off Curve")
-ax.legend()
-ax.grid(True)
-
-st.pyplot(fig)
-
-# -----------------------------
 # ADVANCED ANALYSIS
 # -----------------------------
 st.header("Advanced Analysis")
 
 lam_range = np.linspace(0, 1, 50)
-
 allocations = []
 costs = []
 
@@ -203,9 +171,8 @@ for l in lam_range:
     res_temp = solve_model(R_test)
 
     if res_temp.success:
-        x_temp = res_temp.x
-        allocations.append(x_temp)
-        costs.append(np.dot(cost, x_temp))
+        allocations.append(res_temp.x)
+        costs.append(np.dot(cost, res_temp.x))
     else:
         allocations.append(None)
         costs.append(None)
@@ -241,36 +208,37 @@ for i in range(1, len(costs)):
         delta_lam = lam_range[i] - lam_range[i-1]
 
         if delta_lam != 0:
-            elast = (delta_cost / costs[i-1]) / delta_lam
-            elasticity.append(elast)
+            elasticity.append((delta_cost / costs[i-1]) / delta_lam)
 
 if elasticity:
     avg_elast = np.mean(elasticity)
     st.write(f"Average Cost Elasticity: {avg_elast:.4f}")
-
-    if avg_elast < -1:
-        st.success("Highly sensitive to risk changes")
-    elif avg_elast < 0:
-        st.info("Moderate sensitivity")
-    else:
-        st.warning("Low sensitivity")
 else:
     st.write("Elasticity not computable")
 
 # -----------------------------
-# COST vs LAMBDA GRAPH
+# AUTO EXPLANATION
 # -----------------------------
-st.subheader("Cost vs Lambda")
+st.header("AI Explanation")
 
-fig2, ax2 = plt.subplots()
+used_suppliers = [suppliers[i] for i in range(len(x)) if x[i] > 1e-2]
 
-valid_lam = [lam_range[i] for i in range(len(costs)) if costs[i] is not None]
-valid_costs = [c for c in costs if c is not None]
+if len(used_suppliers) == 1:
+    st.write(f"Only Supplier {used_suppliers[0]} is used.")
+else:
+    st.write(f"Suppliers used: {', '.join(used_suppliers)}")
 
-ax2.plot(valid_lam, valid_costs, marker='o')
+if lam < 0.3:
+    st.info("Low risk → safer suppliers preferred.")
+elif lam > 0.7:
+    st.info("High risk → cheaper suppliers preferred.")
+else:
+    st.info("Balanced strategy.")
 
-ax2.set_xlabel("Lambda")
-ax2.set_ylabel("Cost")
-ax2.set_title("Cost Sensitivity")
+if switch_points:
+    st.write("Switching occurs due to trade-off between cost and risk.")
 
-st.pyplot(fig2)
+st.write(f"""
+At λ = {lam:.2f}, the model selects {', '.join(used_suppliers)} 
+to minimize cost under risk constraint.
+""")
