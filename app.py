@@ -6,7 +6,7 @@ import pandas as pd
 
 st.set_page_config(layout="wide")
 
-st.title("📊 Cost-Risk Optimization Dashboard")
+st.title("📊 Cost Optimization with Risk Control")
 
 # -----------------------------
 # DEMAND
@@ -62,61 +62,65 @@ if mode == "Select Suppliers Manually":
         selected.append(1 if val else 0)
 
 # -----------------------------
-# PREFERENCE SLIDER
+# LAMBDA (RISK CONTROL)
 # -----------------------------
-st.header("Preference")
-lam = st.slider("Cost vs Risk Preference (λ)", 0.0, 1.0, 0.5)
+st.header("Risk Preference (λ)")
+
+lam = st.slider("Risk Tolerance (λ)", 0.0, 1.0, 0.5)
+
+# Map λ → Risk Limit
+R_max = 0.1 + 0.8 * lam
+
+st.write(f"Allowed Risk Level: {R_max:.2f}")
 
 # -----------------------------
-# SOLVER FUNCTION (WEIGHTED)
+# SOLVER FUNCTION (COST MIN)
 # -----------------------------
-def solve_model_weighted(lam):
-
-    C_max = max(cost) * D  # normalization
-
-    obj = lam * (cost / C_max) + (1 - lam) * risk
+def solve_model(R_limit):
 
     A_ub = [
-        [-1, -1, -1],
+        [-1, -1, -1],  # Demand
         [1, 0, 0],
         [0, 1, 0],
-        [0, 0, 1]
+        [0, 0, 1],
+        risk.tolist()  # Risk constraint
     ]
 
     b_ub = [
         -D,
         capacity[0] * selected[0],
         capacity[1] * selected[1],
-        capacity[2] * selected[2]
+        capacity[2] * selected[2],
+        R_limit * D
     ]
 
     bounds = [(0, None)] * 3
 
-    return linprog(c=obj, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
+    return linprog(c=cost, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
 
 # -----------------------------
 # CURRENT SOLUTION
 # -----------------------------
-res = solve_model_weighted(lam)
+res = solve_model(R_max)
 
 if res.success:
     x = res.x
     C_star = np.dot(cost, x)
     R_star = np.dot(risk, x) / D
 else:
-    st.error("No feasible solution")
+    st.error("No feasible solution for this risk level")
     st.stop()
 
 # -----------------------------
-# GENERATE PARETO (λ sweep)
+# GENERATE TRADE-OFF CURVE
 # -----------------------------
 cost_list = []
 risk_list = []
 
-lam_values = np.linspace(0, 1, 50)
+risk_levels = np.linspace(0.05, 0.9, 60)
 
-for l in lam_values:
-    res_temp = solve_model_weighted(l)
+for r_lim in risk_levels:
+    res_temp = solve_model(r_lim)
 
     if res_temp.success:
         x_temp = res_temp.x
@@ -140,23 +144,9 @@ for c, r in points:
 cost_p, risk_p = zip(*pareto)
 
 # -----------------------------
-# RECOMMENDED SOLUTION
-# -----------------------------
-C_max = max(cost_p)
-
-scores = []
-for c, r in zip(cost_p, risk_p):
-    score = lam * (c / C_max) + (1 - lam) * r
-    scores.append(score)
-
-best_index = int(np.argmin(scores))
-C_best = cost_p[best_index]
-R_best = risk_p[best_index]
-
-# -----------------------------
 # GRAPH
 # -----------------------------
-st.header("Pareto Trade-off Curve")
+st.header("Cost vs Risk Trade-off")
 
 fig, ax = plt.subplots()
 
@@ -167,22 +157,11 @@ ax.scatter(cost_list, risk_list, alpha=0.3, label="All Solutions")
 ax.plot(cost_p, risk_p, color='blue', marker='o', linewidth=2, label="Pareto Frontier")
 
 # Current solution
-ax.scatter(C_star, R_star, color='red', s=120, label="Current Solution")
-
-# Recommended solution
-ax.scatter(C_best, R_best, color='green', s=150, label="Recommended")
-
-# Indifference line
-C_vals = np.linspace(min(cost_p), max(cost_p), 100)
-k = lam*(C_best/C_max) + (1-lam)*R_best
-
-R_vals = (k - lam*(C_vals/C_max)) / (1-lam + 1e-6)
-
-ax.plot(C_vals, R_vals, linestyle='--', color='green', label="Preference Line")
+ax.scatter(C_star, R_star, color='red', s=120, label="Selected (λ-based)")
 
 ax.set_xlabel("Cost")
 ax.set_ylabel("Risk")
-ax.set_title("Cost-Risk Trade-off")
+ax.set_title("Cost vs Risk Trade-off")
 ax.grid(True)
 ax.legend()
 
@@ -213,16 +192,13 @@ st.write(f"Total Cost: {C_star:.2f}")
 st.write(f"Average Risk: {R_star:.4f}")
 
 # -----------------------------
-# INSIGHTS
+# INSIGHT PANEL
 # -----------------------------
-st.header("AI Recommendation")
+st.header("Insights")
 
-st.write(f"Recommended Cost: {C_best:.2f}")
-st.write(f"Recommended Risk: {R_best:.4f}")
-
-if lam > 0.7:
-    st.success("You are prioritizing cost → Cheapest solution recommended.")
-elif lam < 0.3:
-    st.success("You are prioritizing risk → Safer suppliers preferred.")
+if lam < 0.3:
+    st.success("Low risk preference → safer suppliers selected, higher cost")
+elif lam > 0.7:
+    st.success("High risk tolerance → cheaper suppliers selected")
 else:
-    st.success("Balanced strategy → Optimal cost-risk mix.")
+    st.success("Balanced approach between cost and risk")
