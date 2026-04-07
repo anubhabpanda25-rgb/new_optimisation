@@ -242,3 +242,85 @@ st.write(f"""
 At λ = {lam:.2f}, the model selects {', '.join(used_suppliers)} 
 to minimize cost under risk constraint.
 """)
+# -----------------------------
+# DECISION INTELLIGENCE ENGINE
+# -----------------------------
+st.header("Decision Intelligence")
+
+# Clean valid data
+valid_lam = []
+valid_costs = []
+valid_risks = []
+
+for i in range(len(lam_range)):
+    if costs[i] is not None and allocations[i] is not None:
+        valid_lam.append(lam_range[i])
+        valid_costs.append(costs[i])
+        valid_risks.append(np.dot(risk, allocations[i]) / D)
+
+# Normalize cost
+C_max = max(valid_costs)
+
+scores = []
+
+for i in range(len(valid_lam)):
+    score = (valid_costs[i] / C_max) * 0.6 + valid_risks[i] * 0.4
+    scores.append(score)
+
+best_idx = int(np.argmin(scores))
+
+lam_opt = valid_lam[best_idx]
+cost_opt = valid_costs[best_idx]
+risk_opt = valid_risks[best_idx]
+
+# -----------------------------
+# RECOMMENDATION OUTPUT
+# -----------------------------
+st.subheader("Recommended Strategy")
+
+st.write(f"Optimal λ: {lam_opt:.2f}")
+st.write(f"Expected Cost: {cost_opt:.2f}")
+st.write(f"Expected Risk: {risk_opt:.4f}")
+
+# -----------------------------
+# STRATEGY CLASSIFICATION
+# -----------------------------
+if lam_opt < 0.3:
+    st.success("Strategy: Risk-Averse (Safe sourcing)")
+elif lam_opt > 0.7:
+    st.success("Strategy: Cost-Driven (Aggressive sourcing)")
+else:
+    st.success("Strategy: Balanced sourcing")
+
+# -----------------------------
+# IMPROVEMENT INSIGHT
+# -----------------------------
+st.subheader("Improvement Insight")
+
+current_cost = C_star
+
+cost_diff = current_cost - cost_opt
+
+if abs(cost_diff) < 1e-2:
+    st.write("Your current choice is already optimal.")
+elif cost_diff > 0:
+    perc = (cost_diff / current_cost) * 100
+    st.write(f"You can reduce cost by {perc:.2f}% by adjusting λ towards {lam_opt:.2f}")
+else:
+    st.write("Current strategy is more aggressive than recommended.")
+
+# -----------------------------
+# DECISION SUMMARY
+# -----------------------------
+st.subheader("Executive Summary")
+
+st.write(f"""
+- Current λ: {lam:.2f}
+- Recommended λ: {lam_opt:.2f}
+
+The model suggests shifting your sourcing strategy to better balance cost and risk.
+This recommendation is based on evaluating all feasible supplier allocations.
+
+Switching towards λ = {lam_opt:.2f} will improve cost efficiency 
+while maintaining acceptable risk exposure.
+""")
