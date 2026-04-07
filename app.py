@@ -6,7 +6,7 @@ import pandas as pd
 
 st.set_page_config(layout="wide")
 
-st.title("📊 Cost Minimization with Risk Constraint")
+st.title("📊 Cost Optimization with Risk Control")
 
 # -----------------------------
 # DEMAND
@@ -15,7 +15,7 @@ st.header("Demand Input")
 D = st.number_input("Enter Total Demand", value=1000)
 
 # -----------------------------
-# SUPPLIER INPUT (COLUMNS)
+# SUPPLIER INPUT
 # -----------------------------
 st.header("Supplier Details")
 
@@ -77,12 +77,18 @@ else:
     R_max = 0.60
 
 # -----------------------------
+# PREFERENCE SLIDER
+# -----------------------------
+st.header("Preference")
+lam = st.slider("Cost vs Risk Preference (λ)", 0.0, 1.0, 0.5)
+
+# -----------------------------
 # SOLVER FUNCTION
 # -----------------------------
 def solve_model(R_limit):
 
     A_ub = [
-        [-1, -1, -1],  # Demand
+        [-1, -1, -1],
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
@@ -111,7 +117,7 @@ if res.success:
     C_star = np.dot(cost, x)
     R_star = np.dot(risk, x) / D
 else:
-    st.error("No feasible solution for selected risk level")
+    st.error("No feasible solution")
     st.stop()
 
 # -----------------------------
@@ -120,22 +126,18 @@ else:
 cost_list = []
 risk_list = []
 
-risk_levels = np.linspace(0.05, 1.0, 50)
+risk_levels = np.linspace(0.05, 1.0, 60)
 
 for r_lim in risk_levels:
     res_temp = solve_model(r_lim)
 
     if res_temp.success:
         x_temp = res_temp.x
-
-        cost_val = float(np.dot(cost, x_temp))
-        risk_val = float(np.dot(risk, x_temp) / D)
-
-        cost_list.append(cost_val)
-        risk_list.append(risk_val)
+        cost_list.append(float(np.dot(cost, x_temp)))
+        risk_list.append(float(np.dot(risk, x_temp) / D))
 
 # -----------------------------
-# PARETO FILTERING (ROBUST)
+# PARETO FILTER
 # -----------------------------
 points = list(set(zip(cost_list, risk_list)))
 points = sorted(points, key=lambda x: x[0])
@@ -148,15 +150,26 @@ for c, r in points:
         pareto.append((c, r))
         min_risk = r
 
-if len(pareto) > 1:
-    cost_p, risk_p = zip(*pareto)
-else:
-    cost_p, risk_p = cost_list, risk_list
+cost_p, risk_p = zip(*pareto)
+
+# -----------------------------
+# RECOMMENDED SOLUTION
+# -----------------------------
+C_max = max(cost_p)
+
+scores = []
+for c, r in zip(cost_p, risk_p):
+    score = lam * (c / C_max) + (1 - lam) * r
+    scores.append(score)
+
+best_index = int(np.argmin(scores))
+C_best = cost_p[best_index]
+R_best = risk_p[best_index]
 
 # -----------------------------
 # GRAPH
 # -----------------------------
-st.header("Cost vs Risk Pareto Curve")
+st.header("Pareto Trade-off Curve")
 
 fig, ax = plt.subplots()
 
@@ -167,11 +180,21 @@ ax.scatter(cost_list, risk_list, alpha=0.3, label="All Solutions")
 ax.plot(cost_p, risk_p, color='blue', marker='o', linewidth=2, label="Pareto Frontier")
 
 # Selected solution
-ax.scatter(C_star, R_star, color='red', s=120, label="Selected Solution")
+ax.scatter(C_star, R_star, color='red', s=120, label="Current Solution")
+
+# Recommended solution
+ax.scatter(C_best, R_best, color='green', s=150, label="Recommended")
+
+# Indifference line
+C_vals = np.linspace(min(cost_p), max(cost_p), 100)
+k = lam*(C_best/C_max) + (1-lam)*R_best
+
+R_vals = (k - lam*(C_vals/C_max)) / (1-lam + 1e-6)
+
+ax.plot(C_vals, R_vals, linestyle='--', color='green', label="Preference Line")
 
 ax.set_xlabel("Cost")
 ax.set_ylabel("Risk")
-ax.set_title("Pareto Trade-off Curve")
 ax.grid(True)
 ax.legend()
 
@@ -189,7 +212,7 @@ st.subheader("Pareto Data")
 st.dataframe(df)
 
 # -----------------------------
-# OUTPUT
+# RESULTS
 # -----------------------------
 st.header("Results")
 
@@ -200,4 +223,18 @@ for i, s in enumerate(suppliers):
 st.subheader("Metrics")
 st.write(f"Total Cost: {C_star:.2f}")
 st.write(f"Average Risk: {R_star:.4f}")
-st.write(f"Risk Limit Used: {R_max}")
+
+# -----------------------------
+# INSIGHT PANEL
+# -----------------------------
+st.header("AI Recommendation")
+
+st.write(f"Recommended Cost: {C_best:.2f}")
+st.write(f"Recommended Risk: {R_best:.4f}")
+
+if lam > 0.7:
+    st.success("You are prioritizing cost heavily → Cheapest solution recommended.")
+elif lam < 0.3:
+    st.success("You are prioritizing risk → Safer suppliers preferred.")
+else:
+    st.success("Balanced strategy → Optimal cost-risk mix.")
