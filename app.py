@@ -1,37 +1,50 @@
+%%writefile app.py
 
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import linprog
+import pandas as pd
+
+st.set_page_config(layout="wide")
 
 st.title("📊 Cost Minimization with Risk Constraint")
 
 # -----------------------------
-# INPUTS
+# DEMAND
 # -----------------------------
-st.header("Demand")
+st.header("Demand Input")
 
-D = st.number_input("Total Demand", value=1000)
+D = st.number_input("Enter Total Demand", value=1000)
 
-st.header("Supplier Data")
+# -----------------------------
+# SUPPLIER INPUT (IN COLUMNS)
+# -----------------------------
+st.header("Supplier Details")
 
-cost = np.array([
-    st.number_input("Cost A", value=10),
-    st.number_input("Cost B", value=12),
-    st.number_input("Cost C", value=11)
-])
+col1, col2, col3 = st.columns(3)
 
-risk = np.array([
-    st.number_input("Risk A", value=0.2),
-    st.number_input("Risk B", value=0.5),
-    st.number_input("Risk C", value=0.3)
-])
+with col1:
+    st.subheader("Supplier A")
+    cost_A = st.number_input("Cost A", value=10)
+    risk_A = st.number_input("Risk A", value=0.2)
+    cap_A = st.number_input("Capacity A", value=500)
 
-capacity = np.array([
-    st.number_input("Capacity A", value=500),
-    st.number_input("Capacity B", value=700),
-    st.number_input("Capacity C", value=400)
-])
+with col2:
+    st.subheader("Supplier B")
+    cost_B = st.number_input("Cost B", value=12)
+    risk_B = st.number_input("Risk B", value=0.5)
+    cap_B = st.number_input("Capacity B", value=700)
+
+with col3:
+    st.subheader("Supplier C")
+    cost_C = st.number_input("Cost C", value=11)
+    risk_C = st.number_input("Risk C", value=0.3)
+    cap_C = st.number_input("Capacity C", value=400)
+
+cost = np.array([cost_A, cost_B, cost_C])
+risk = np.array([risk_A, risk_B, risk_C])
+capacity = np.array([cap_A, cap_B, cap_C])
 
 suppliers = ["A", "B", "C"]
 
@@ -72,11 +85,11 @@ else:
 def solve_model(R_limit):
 
     A_ub = [
-        [-1,-1,-1],  # Demand
+        [-1,-1,-1],
         [1,0,0],
         [0,1,0],
         [0,0,1],
-        risk.tolist()  # Risk constraint
+        risk.tolist()
     ]
 
     b_ub = [
@@ -107,7 +120,7 @@ else:
     st.stop()
 
 # -----------------------------
-# TRADE-OFF CURVE (MULTIPLE POINTS)
+# TRADE-OFF CURVE
 # -----------------------------
 cost_list = []
 risk_list = []
@@ -119,24 +132,17 @@ for r_lim in risk_levels:
 
     if res_temp.success:
         x_temp = res_temp.x
-
-        cost_val = np.dot(cost, x_temp)
-        risk_val = np.dot(risk, x_temp) / D
-
-        cost_list.append(cost_val)
-        risk_list.append(risk_val)
+        cost_list.append(np.dot(cost, x_temp))
+        risk_list.append(np.dot(risk, x_temp) / D)
 
 # -----------------------------
-# PLOT GRAPH
+# GRAPH
 # -----------------------------
 st.header("Cost vs Risk Trade-off")
 
 fig, ax = plt.subplots()
 
-# Trade-off curve
 ax.plot(cost_list, risk_list, marker='o', label="Trade-off Curve")
-
-# Highlight selected solution
 ax.scatter(C_star, R_star, color='red', s=100, label="Selected Solution")
 
 ax.set_xlabel("Cost")
@@ -146,10 +152,8 @@ ax.legend()
 st.pyplot(fig)
 
 # -----------------------------
-# SHOW TABLE (VERY USEFUL)
+# TABLE
 # -----------------------------
-import pandas as pd
-
 df = pd.DataFrame({
     "Cost": cost_list,
     "Risk": risk_list
