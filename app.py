@@ -62,12 +62,10 @@ st.header("Step 3: Risk Preference")
 
 lam = st.slider("Risk Tolerance (λ)", 0.0, 1.0, 0.5)
 
-# Convert λ → risk limit
 def lambda_to_risk(l):
     return 0.1 + 0.8 * l
 
 R_max = lambda_to_risk(lam)
-
 st.write(f"Allowed Risk Level: {R_max:.2f}")
 
 # -----------------------------
@@ -76,11 +74,11 @@ st.write(f"Allowed Risk Level: {R_max:.2f}")
 def solve_model(R_limit):
 
     A_ub = [
-        [-1, -1, -1],
+        [-1, -1, -1],     # demand
         [1, 0, 0],
         [0, 1, 0],
         [0, 0, 1],
-        risk.tolist()
+        risk.tolist()     # risk constraint
     ]
 
     b_ub = [
@@ -105,7 +103,7 @@ if res.success:
     C_star = np.dot(cost, x)
     R_star = np.dot(risk, x) / D
 else:
-    st.error("No feasible solution")
+    st.error("No feasible solution for selected λ")
     st.stop()
 
 # -----------------------------
@@ -157,5 +155,122 @@ for l in lambda_values:
     })
 
 df = pd.DataFrame(results)
-
 st.dataframe(df)
+
+# -----------------------------
+# TRADE-OFF CURVE
+# -----------------------------
+st.header("Cost vs Risk Trade-off")
+
+cost_list = []
+risk_list = []
+
+risk_levels = np.linspace(0.05, 0.9, 50)
+
+for r_lim in risk_levels:
+    res_temp = solve_model(r_lim)
+
+    if res_temp.success:
+        x_temp = res_temp.x
+        cost_list.append(float(np.dot(cost, x_temp)))
+        risk_list.append(float(np.dot(risk, x_temp) / D))
+
+fig, ax = plt.subplots()
+
+ax.scatter(cost_list, risk_list, alpha=0.4, label="Solutions")
+ax.scatter(C_star, R_star, color='red', s=120, label="Selected")
+
+ax.set_xlabel("Cost")
+ax.set_ylabel("Risk")
+ax.set_title("Trade-off Curve")
+ax.legend()
+ax.grid(True)
+
+st.pyplot(fig)
+
+# -----------------------------
+# ADVANCED ANALYSIS
+# -----------------------------
+st.header("Advanced Analysis")
+
+lam_range = np.linspace(0, 1, 50)
+
+allocations = []
+costs = []
+
+for l in lam_range:
+    R_test = lambda_to_risk(l)
+    res_temp = solve_model(R_test)
+
+    if res_temp.success:
+        x_temp = res_temp.x
+        allocations.append(x_temp)
+        costs.append(np.dot(cost, x_temp))
+    else:
+        allocations.append(None)
+        costs.append(None)
+
+# -----------------------------
+# SUPPLIER SWITCHING
+# -----------------------------
+st.subheader("Supplier Switching Points")
+
+switch_points = []
+
+for i in range(1, len(allocations)):
+    if allocations[i] is not None and allocations[i-1] is not None:
+        if not np.allclose(allocations[i], allocations[i-1], atol=1e-2):
+            switch_points.append(lam_range[i])
+
+if switch_points:
+    for sp in switch_points:
+        st.write(f"Switch occurs near λ = {sp:.2f}")
+else:
+    st.write("No major switching detected")
+
+# -----------------------------
+# COST ELASTICITY
+# -----------------------------
+st.subheader("Cost Elasticity")
+
+elasticity = []
+
+for i in range(1, len(costs)):
+    if costs[i] is not None and costs[i-1] is not None:
+        delta_cost = costs[i] - costs[i-1]
+        delta_lam = lam_range[i] - lam_range[i-1]
+
+        if delta_lam != 0:
+            elast = (delta_cost / costs[i-1]) / delta_lam
+            elasticity.append(elast)
+
+if elasticity:
+    avg_elast = np.mean(elasticity)
+    st.write(f"Average Cost Elasticity: {avg_elast:.4f}")
+
+    if avg_elast < -1:
+        st.success("Highly sensitive to risk changes")
+    elif avg_elast < 0:
+        st.info("Moderate sensitivity")
+    else:
+        st.warning("Low sensitivity")
+else:
+    st.write("Elasticity not computable")
+
+# -----------------------------
+# COST vs LAMBDA GRAPH
+# -----------------------------
+st.subheader("Cost vs Lambda")
+
+fig2, ax2 = plt.subplots()
+
+valid_lam = [lam_range[i] for i in range(len(costs)) if costs[i] is not None]
+valid_costs = [c for c in costs if c is not None]
+
+ax2.plot(valid_lam, valid_costs, marker='o')
+
+ax2.set_xlabel("Lambda")
+ax2.set_ylabel("Cost")
+ax2.set_title("Cost Sensitivity")
+
+st.pyplot(fig2)
